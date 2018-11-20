@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import kdtree
 
 EPS_M = 0.1
+MIN_LENGTH = 1.0
 PAUSE = 'G4 P0.5; pause'
 FEED_RATE = 12000
 
@@ -63,15 +64,19 @@ if __name__ == '__main__':
 	extents = [None, None, None, None]
 
 	root = ET.parse(sys.stdin).getroot()
-	segments = [] # ( (x1, y1), (x2, y2), length ), ...
+	segments = [] # ( (x1, y1), (x2, y2), length, slope ), ...
 	kdt = kdtree.create(dimensions=2)
 
 	# collect segments, add to kd-tree
-	for (i, line) in enumerate(root.iter('{http://www.w3.org/2000/svg}line')):
+	for line in root.iter('{http://www.w3.org/2000/svg}line'):
 		x1 = coord(line, 'x1')
 		x2 = coord(line, 'x2')
 		y1 = coord(line, 'y1')
 		y2 = coord(line, 'y2')
+
+		length = dist((x1, y1), (x2, y2))
+		if length < MIN_LENGTH:
+			continue
 
 		# track max & min points
 		for (j, d) in enumerate((x1, y1, x2, y2)):
@@ -81,13 +86,19 @@ if __name__ == '__main__':
 				f = j < 2 and min or max
 				extents[j] = f(extents[j], d)
 
-		segments.append([[x1, y1], [x2, y2], dist((x1, y1), (x2, y2))])
+		dx = x2 - x1
+		if dx != 0:
+			slope = (y2 - y1) / dx
+		else:
+			slope = sys.float_info.max
+
+		segments.append([[x1, y1], [x2, y2], length, slope])
 		for pt in ((x1, y1), (x2, y2)):
 			closest = kdt.search_nn(pt)
 			if not closest or len(closest) == 0 or dist(pt, closest[0].data) > EPS_M:
-				kdt.add(Point(pt[0], pt[1], [i]))
+				kdt.add(Point(pt[0], pt[1], [len(segments)-1]))
 			else:
-				closest[0].data.segments.append(i)
+				closest[0].data.segments.append(len(segments)-1)
 
 
 	fit = False
@@ -100,6 +111,7 @@ if __name__ == '__main__':
 
 	# start with upper left-most point
 	last_pt = (0,0)
+	last_slope = 0
 	closest = None
 	
 	while drawn < len(segments):
@@ -109,8 +121,9 @@ if __name__ == '__main__':
 			if closest and len(closest) > 1:
 				closest = closest[0]
 
-		# find the longest segment passing through this point
-		current_seg_index = sorted(closest.data.segments, key=lambda q: segments[q][2], reverse=True)[0]
+		# find the adjoining segment that has the most similar slope
+		# (large changes in direction lead to wobble in the plotter)
+		current_seg_index = sorted(closest.data.segments, key=lambda q: abs(last_slope - segments[q][3]))[0]
 		current_seg = segments[current_seg_index]
 
 		# figure out which of the segment's points is closest
@@ -131,6 +144,7 @@ if __name__ == '__main__':
 		print('G01 X{:0.5f} Y{:0.5f}'.format(xpt[0], xpt[1]))
 
 		last_pt = pts[1]
+		last_slope = current_seg[3]
 
 		# remove segment index from first point's list of segment indices
 		closest.data.segments.remove(current_seg_index)
