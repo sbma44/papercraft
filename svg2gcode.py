@@ -8,6 +8,7 @@ import kdtree
 
 EPS_M = 0.1
 PAUSE = 'G4 P0.5; pause'
+FEED_RATE = 12000
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--fit', help='x,y range to normalize output gcode to')
@@ -121,8 +122,8 @@ if __name__ == '__main__':
 			print('M3 S100; pen up')
 			print(PAUSE)
 			xpt = xformer.xform(pts[0])
-			print('G00 X{:0.5f} Y{:0.5f}'.format(xpt[0], xpt[1]))
-			print('M3 0; pen down')
+			print('G00 X{:0.5f} Y{:0.5f} F{}'.format(xpt[0], xpt[1], str(FEED_RATE)))
+			print('M3 S0; pen down')
 			print(PAUSE)
 
 		# draw to the other point
@@ -147,6 +148,6 @@ if __name__ == '__main__':
 
 		drawn = drawn + 1
 
-	print('M3 100; pen up')
+	print('M3 S100; pen up')
 	print(PAUSE)
 	print('G00 X0 Y0; home')
